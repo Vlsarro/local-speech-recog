@@ -1,0 +1,33 @@
+services:
+  mms_asr:
+    image: onerahmet/openai-whisper-asr-webservice:${WHISPER_SERVICE_IMAGE_TAG:-latest}
+    environment:
+      - ASR_MODEL=${ASR_MODEL:-turbo}
+      - ASR_MODEL_PATH=${ASR_MODEL_PATH:-/data/whisper}
+      - ASR_ENGINE=${ASR_ENGINE:-openai_whisper}
+      - HF_TOKEN=${HF_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1000m"
+        max-file: "2"
+        tag: "{{.Name}}"
+    ports:
+      - 9005:9000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - whisper_data:/data/whisper
+
+volumes:
+  whisper_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: $PWD/data/whisper
+      o: bind
