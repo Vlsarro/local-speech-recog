@@ -144,11 +144,11 @@ fn transcribe_file(http_client: &Client, path: &Path, args: &Args) -> Result<Str
 }
 
 fn save_file(path: &Path, data: &str, out_format: &Output) -> Result<String> {
-    let txt_filepath = path.with_extension(out_format.as_str());
-    let txt_filepath_str = txt_filepath.to_string_lossy().into_owned();
-    let mut file = File::create(txt_filepath)?;
+    let out_filepath = path.with_extension(out_format.as_str());
+    let out_filepath_str = out_filepath.to_string_lossy().into_owned();
+    let mut file = File::create(out_filepath)?;
     file.write_all(data.as_bytes())?;
-    Ok(txt_filepath_str)
+    Ok(out_filepath_str)
 }
 
 fn main() -> Result<()> {
@@ -172,10 +172,10 @@ fn main() -> Result<()> {
 
         let transcription_data = transcribe_file(&http_client, filepath, &args)
             .with_context(|| format!("Failed to process {:?}", filepath))?;
-        let result_txt_filename = save_file(filepath, &transcription_data, &args.output)
+        let result_out_filename = save_file(filepath, &transcription_data, &args.output)
             .with_context(|| format!("Failed to save data from processed {:?}", filepath))?;
 
-        log::info!("File transcription was saved to {}", result_txt_filename);
+        log::info!("File transcription was saved to {}", result_out_filename);
     }
 
     Ok(())
