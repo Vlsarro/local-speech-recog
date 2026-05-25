@@ -3,11 +3,32 @@ use std::io::Write;
 use std::{collections::HashSet, fs, path::Path, path::PathBuf};
 
 use anyhow::{Context, Ok, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 
 use reqwest::Url;
 use reqwest::blocking::{Client, multipart};
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum Output {
+    Text,
+    Json,
+    Vtt,
+    Srt,
+    Tsv,
+}
+
+impl Output {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Output::Text => "txt",
+            Output::Json => "json",
+            Output::Vtt => "vtt",
+            Output::Srt => "srt",
+            Output::Tsv => "tsv",
+        }
+    }
+}
 
 /// Whisper ASR Webservice client
 #[derive(Parser, Debug)]
@@ -21,9 +42,9 @@ struct Args {
     #[arg(short, long, default_value = ".")]
     dirpath: String,
 
-    /// Output file format, text, json, vtt, srt, tsv
-    #[arg(short, long, default_value = "text")]
-    output: String,
+    /// Output file format
+    #[arg(short, long, value_enum, default_value_t = Output::Text)]
+    output: Output,
 
     /// Source language code
     #[arg(short, long, default_value = "en")]
@@ -37,30 +58,28 @@ const ALLOWED_MEDIA_FORMATS: &[&str] = &[
     "mp3", "wav", "flac", "aac", "ogg", "m4a", "mp4", "mkv", "mov", "avi", "webm", "wmv",
 ];
 
-const TXT_FORMAT: &str = "txt";
-
 fn is_media_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ALLOWED_MEDIA_FORMATS.contains(&ext.to_lowercase().as_str()))
 }
 
-fn is_txt_file(path: &Path) -> bool {
+fn is_file_already_processed(path: &Path, out_format: &Output) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case(TXT_FORMAT))
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(out_format.as_str()))
 }
 
 fn extract_file_stem(path: &Path) -> Option<&str> {
     path.file_stem().and_then(|n| n.to_str())
 }
 
-fn list_media_files(dirpath: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
+fn list_media_files(dirpath: impl AsRef<Path>, out_format: &Output) -> Result<Vec<PathBuf>> {
     let dirpath = dirpath.as_ref();
     log::info!("Searching for media files in {:?}", dirpath);
 
     let mut res: Vec<PathBuf> = Vec::new();
-    let mut txt_files_stems = HashSet::new();
+    let mut processed_files_stems = HashSet::new();
 
     for entry in fs::read_dir(dirpath)? {
         let entry = entry?;
@@ -68,16 +87,16 @@ fn list_media_files(dirpath: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         if path.is_file() {
             if is_media_file(&path) {
                 res.push(path);
-            } else if is_txt_file(&path)
+            } else if is_file_already_processed(&path, out_format)
                 && let Some(stem) = extract_file_stem(&path)
             {
-                txt_files_stems.insert(stem.to_string());
+                processed_files_stems.insert(stem.to_string());
             }
         }
     }
 
     res.retain(|media_path| {
-        !extract_file_stem(media_path).is_some_and(|stem| txt_files_stems.contains(stem))
+        !extract_file_stem(media_path).is_some_and(|stem| processed_files_stems.contains(stem))
     });
 
     Ok(res)
@@ -94,10 +113,19 @@ fn transcribe_file(http_client: &Client, path: &Path, args: &Args) -> Result<Str
             ("language", &args.lang),
             ("initial_prompt", ""),
             ("word_timestamps", "false"),
-            ("output", &args.output),
+            ("output", args.output.as_str()),
         ],
     )?
     .join(ASR_ENDPOINT)?;
+
+    let params = [
+        ("encode", "true"),
+        ("task", "transcribe"),
+        ("language", &args.lang),
+        ("initial_prompt", ""),
+        ("word_timestamps", "false"),
+        ("output", args.output.as_str()),
+    ];
 
     let input_data = fs::read(path)?;
 
@@ -107,6 +135,7 @@ fn transcribe_file(http_client: &Client, path: &Path, args: &Args) -> Result<Str
     );
     let response = http_client
         .post(url)
+        .query(&params)
         .multipart(form)
         .send()?
         .error_for_status()?;
@@ -114,8 +143,8 @@ fn transcribe_file(http_client: &Client, path: &Path, args: &Args) -> Result<Str
     Ok(result_text)
 }
 
-fn save_file(path: &Path, data: &str) -> Result<String> {
-    let txt_filepath = path.with_extension(TXT_FORMAT);
+fn save_file(path: &Path, data: &str, out_format: &Output) -> Result<String> {
+    let txt_filepath = path.with_extension(out_format.as_str());
     let txt_filepath_str = txt_filepath.to_string_lossy().into_owned();
     let mut file = File::create(txt_filepath)?;
     file.write_all(data.as_bytes())?;
@@ -128,7 +157,7 @@ fn main() -> Result<()> {
         .filter_level(args.verbosity.into())
         .init();
 
-    let media_files = list_media_files(&args.dirpath)?;
+    let media_files = list_media_files(&args.dirpath, &args.output)?;
     let media_files_len = media_files.len();
     log::info!("Number of media files to process: {}", media_files_len);
 
@@ -143,10 +172,10 @@ fn main() -> Result<()> {
 
         let transcription_data = transcribe_file(&http_client, filepath, &args)
             .with_context(|| format!("Failed to process {:?}", filepath))?;
-        let result_txt_filename = save_file(filepath, &transcription_data)
+        let result_txt_filename = save_file(filepath, &transcription_data, &args.output)
             .with_context(|| format!("Failed to save data from processed {:?}", filepath))?;
 
-        log::info!("File transacription was saved to {}", result_txt_filename);
+        log::info!("File transcription was saved to {}", result_txt_filename);
     }
 
     Ok(())
