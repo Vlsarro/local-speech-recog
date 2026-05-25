@@ -105,18 +105,7 @@ fn list_media_files(dirpath: impl AsRef<Path>, out_format: &Output) -> Result<Ve
 const ASR_ENDPOINT: &str = "/asr";
 
 fn transcribe_file(http_client: &Client, path: &Path, args: &Args) -> Result<String> {
-    let url = Url::parse_with_params(
-        &args.host,
-        &[
-            ("encode", "true"),
-            ("task", "transcribe"),
-            ("language", &args.lang),
-            ("initial_prompt", ""),
-            ("word_timestamps", "false"),
-            ("output", args.output.as_str()),
-        ],
-    )?
-    .join(ASR_ENDPOINT)?;
+    let url = Url::parse(&args.host)?.join(ASR_ENDPOINT)?;
 
     let params = [
         ("encode", "true"),
