@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Write;
+use std::time::Duration;
 use std::{collections::HashSet, fs, path::Path, path::PathBuf};
 
 use anyhow::{Context, Ok, Result};
@@ -47,11 +48,15 @@ struct Args {
     output: Output,
 
     /// Source language code
-    #[arg(short, long, default_value = "en")]
-    lang: String,
+    #[arg(short, long)]
+    lang: Option<String>,
 
     #[command(flatten)]
     verbosity: Verbosity<InfoLevel>,
+
+    /// ASR service response timeout in seconds
+    #[arg(short, long, default_value_t = 600.0)]
+    timeout_sec: f64,
 }
 
 const ALLOWED_MEDIA_FORMATS: &[&str] = &[
@@ -104,28 +109,34 @@ fn list_media_files(dirpath: impl AsRef<Path>, out_format: &Output) -> Result<Ve
 
 const ASR_ENDPOINT: &str = "/asr";
 
-fn transcribe_file(http_client: &Client, path: &Path, args: &Args) -> Result<String> {
+fn transcribe_file(http_client: &Client, filepath: &Path, args: &Args) -> Result<String> {
     let url = Url::parse(&args.host)?.join(ASR_ENDPOINT)?;
 
-    let params = [
+    let mut params = vec![
         ("encode", "true"),
         ("task", "transcribe"),
-        ("language", &args.lang),
         ("initial_prompt", ""),
         ("word_timestamps", "false"),
         ("output", args.output.as_str()),
     ];
 
-    let input_data = fs::read(path)?;
+    if let Some(lang) = &args.lang {
+        params.push(("language", lang));
+    }
+
+    let input_data = fs::read(filepath)?;
 
     let form = multipart::Form::new().part(
         "audio_file",
         multipart::Part::bytes(input_data).file_name("afile"),
     );
+
+    let timeout_dur = Duration::try_from_secs_f64(args.timeout_sec)?;
     let response = http_client
         .post(url)
         .query(&params)
         .multipart(form)
+        .timeout(timeout_dur)
         .send()?
         .error_for_status()?;
     let result_text = response.text()?;
@@ -146,7 +157,8 @@ fn main() -> Result<()> {
         .filter_level(args.verbosity.into())
         .init();
 
-    let media_files = list_media_files(&args.dirpath, &args.output)?;
+    let media_files = list_media_files(&args.dirpath, &args.output)
+        .with_context(|| format!("Failed to list media files in {:?}", args.dirpath))?;
     let media_files_len = media_files.len();
     log::info!("Number of media files to process: {}", media_files_len);
 
@@ -159,10 +171,25 @@ fn main() -> Result<()> {
             filepath
         );
 
-        let transcription_data = transcribe_file(&http_client, filepath, &args)
-            .with_context(|| format!("Failed to process {:?}", filepath))?;
-        let result_out_filename = save_file(filepath, &transcription_data, &args.output)
-            .with_context(|| format!("Failed to save data from processed {:?}", filepath))?;
+        let transcribed_data = match transcribe_file(&http_client, filepath, &args) {
+            Result::Ok(data) => data,
+            Err(err) => {
+                log::error!("Failed to process {:?}: {:?}", filepath, err);
+                continue;
+            }
+        };
+
+        let result_out_filename = match save_file(filepath, &transcribed_data, &args.output) {
+            Result::Ok(res) => res,
+            Err(err) => {
+                log::error!(
+                    "Failed to save data from processed {:?}: {:?}",
+                    filepath,
+                    err
+                );
+                continue;
+            }
+        };
 
         log::info!("File transcription was saved to {}", result_out_filename);
     }
