@@ -41,15 +41,15 @@ Whisper ASR Webservice client
 Usage: local-speech-recog [OPTIONS]
 
 Options:
-      --host <HOST>                Whisper ASR Webservice host [default: http://0.0.0.0:9005]
-  -d, --dirpath <DIRPATH>          Directory with audio or video files for transcription [default: .]
-  -o, --output <OUTPUT>            Output file format [default: text] [possible values: text, json, vtt, srt, tsv]
-  -l, --lang <LANG>                Source language code
-  -v, --verbose...                 Increase logging verbosity
-  -q, --quiet...                   Decrease logging verbosity
-  -t, --timeout-sec <TIMEOUT_SEC>  ASR service response timeout in seconds [default: 600]
-  -h, --help                       Print help
-  -V, --version                    Print version
+      --host <HOST>        Whisper ASR Webservice host [default: http://0.0.0.0:9005]
+  -d, --dirpath <DIRPATH>  Directory with audio or video files for transcription [default: .]
+  -o, --output <OUTPUT>    Output file format [default: text] [possible values: text, json, vtt, srt, tsv]
+  -l, --lang <LANG>        Source language code
+  -v, --verbose...         Increase logging verbosity
+  -q, --quiet...           Decrease logging verbosity
+  -t, --timeout <TIMEOUT>  ASR service response timeout [default: 5m]
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 If you have compiled binary then just run it according to usage notes above.

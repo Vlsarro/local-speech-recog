@@ -54,9 +54,9 @@ struct Args {
     #[command(flatten)]
     verbosity: Verbosity<InfoLevel>,
 
-    /// ASR service response timeout in seconds
-    #[arg(short, long, default_value_t = 600.0)]
-    timeout_sec: f64,
+    /// ASR service response timeout
+    #[arg(short, long, value_parser = humantime::parse_duration, default_value = "5m")]
+    timeout: Duration,
 }
 
 const ALLOWED_MEDIA_FORMATS: &[&str] = &[
@@ -131,12 +131,11 @@ fn transcribe_file(http_client: &Client, filepath: &Path, args: &Args) -> Result
         multipart::Part::bytes(input_data).file_name("afile"),
     );
 
-    let timeout_dur = Duration::try_from_secs_f64(args.timeout_sec)?;
     let response = http_client
         .post(url)
         .query(&params)
         .multipart(form)
-        .timeout(timeout_dur)
+        .timeout(args.timeout)
         .send()?
         .error_for_status()?;
     let result_text = response.text()?;
