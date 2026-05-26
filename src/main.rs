@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Write;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{collections::HashSet, fs, path::Path, path::PathBuf};
 
 use anyhow::{Context, Ok, Result};
@@ -151,6 +151,7 @@ fn save_file(path: &Path, data: &str, out_format: &Output) -> Result<String> {
 }
 
 fn main() -> Result<()> {
+    let total_processing_start = Instant::now();
     let args = Args::parse();
     env_logger::Builder::new()
         .filter_level(args.verbosity.into())
@@ -163,6 +164,7 @@ fn main() -> Result<()> {
 
     let http_client = Client::new();
     for (idx, filepath) in media_files.iter().enumerate() {
+        let file_processing_start = Instant::now();
         log::info!(
             "[{}/{}] Processing {:?} ...",
             idx + 1,
@@ -190,8 +192,16 @@ fn main() -> Result<()> {
             }
         };
 
-        log::info!("File transcription was saved to {}", result_out_filename);
+        log::info!(
+            "File transcription was saved to {}, processing time: {:?}",
+            result_out_filename,
+            file_processing_start.elapsed()
+        );
     }
 
+    log::info!(
+        "Files processing finished, total processing time: {:?}",
+        total_processing_start.elapsed()
+    );
     Ok(())
 }
