@@ -10,6 +10,8 @@ use clap_verbosity_flag::{InfoLevel, Verbosity};
 use reqwest::Url;
 use reqwest::blocking::{Client, multipart};
 
+use bytes::Bytes;
+
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Output {
     Text,
@@ -109,7 +111,7 @@ fn list_media_files(dirpath: impl AsRef<Path>, out_format: &Output) -> Result<Ve
 
 const ASR_ENDPOINT: &str = "/asr";
 
-fn transcribe_file(http_client: &Client, filepath: &Path, args: &Args) -> Result<String> {
+fn transcribe_file(http_client: &Client, filepath: &Path, args: &Args) -> Result<Bytes> {
     let url = Url::parse(&args.host)?.join(ASR_ENDPOINT)?;
 
     let mut params = vec![
@@ -138,15 +140,14 @@ fn transcribe_file(http_client: &Client, filepath: &Path, args: &Args) -> Result
         .timeout(args.timeout)
         .send()?
         .error_for_status()?;
-    let result_text = response.text()?;
-    Ok(result_text)
+    Ok(response.bytes()?)
 }
 
-fn save_file(path: &Path, data: &str, out_format: &Output) -> Result<String> {
+fn save_file(path: &Path, data: &Bytes, out_format: &Output) -> Result<String> {
     let out_filepath = path.with_extension(out_format.as_str());
     let out_filepath_str = out_filepath.to_string_lossy().into_owned();
     let mut file = File::create(out_filepath)?;
-    file.write_all(data.as_bytes())?;
+    file.write_all(data)?;
     Ok(out_filepath_str)
 }
 

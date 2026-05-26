@@ -782,6 +782,7 @@ name = "local-speech-recog"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "clap-verbosity-flag",
  "env_logger",
